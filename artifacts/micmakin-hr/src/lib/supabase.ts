@@ -1,50 +1,67 @@
-import { createClient } from '@supabase/supabase-js';
-
 const SUPABASE_URL = 'https://betgdeqmkkayysqwwcic.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJldGdkZXFta2theXlzcXd3Y2ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3OTgxNTgsImV4cCI6MjA4ODM3NDE1OH0.yD2ES8UoEuN1Je8he6169RNCgnoOwIR_qJGkc01bi08';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+// Direct REST helper — matches the original app's approach, bypasses JS client RLS quirks
+export const sbFetch = (path: string, opts: RequestInit = {}) =>
+  fetch(SUPABASE_URL + '/rest/v1/' + path, {
+    ...opts,
+    headers: {
+      apikey: SUPABASE_ANON,
+      Authorization: 'Bearer ' + SUPABASE_ANON,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+      ...(opts.headers || {}),
+    },
+  });
 
-export async function dbSelect(table: string, columns: string = '*', eq?: { column: string; value: any }) {
-  let query = supabase.from(table).select(columns);
-  if (eq) {
-    query = query.eq(eq.column, eq.value);
-  }
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
+export async function dbSelect(table: string, params = ''): Promise<any[]> {
+  const r = await sbFetch(table + (params ? '?' + params : ''), {
+    method: 'GET',
+    headers: { Prefer: '' },
+  });
+  if (!r.ok) { console.error('dbSelect', table, await r.text()); return []; }
+  return r.json();
 }
 
-export async function dbInsertRow(table: string, row: any) {
-  const { data, error } = await supabase.from(table).insert([row]).select();
-  if (error) throw error;
-  return data;
+export async function dbInsertRow(table: string, row: any): Promise<any> {
+  const r = await sbFetch(table, { method: 'POST', body: JSON.stringify(row) });
+  if (!r.ok) { console.error('dbInsert', table, await r.text()); return null; }
+  return r.json();
 }
 
-export async function dbUpsertRow(table: string, row: any) {
-  const { data, error } = await supabase.from(table).upsert([row]).select();
-  if (error) throw error;
-  return data;
+export async function dbUpsertRow(table: string, row: any): Promise<any> {
+  const r = await sbFetch(table, {
+    method: 'POST',
+    body: JSON.stringify(row),
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+  });
+  if (!r.ok) { console.error('dbUpsert', table, await r.text()); return null; }
+  return r.json();
 }
 
-export async function dbUpdateRow(table: string, id: string | number, updates: any) {
-  const { data, error } = await supabase.from(table).update(updates).eq('id', id).select();
-  if (error) throw error;
-  return data;
+export async function dbUpdateRow(table: string, id: string | number, updates: any): Promise<any> {
+  const r = await sbFetch(table + '?id=eq.' + id, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  if (!r.ok) { console.error('dbUpdate', table, await r.text()); return null; }
+  return r.json();
 }
 
-export async function dbDeleteRow(table: string, id: string | number) {
-  const { error } = await supabase.from(table).delete().eq('id', id);
-  if (error) throw error;
-  return true;
+export async function dbDeleteRow(table: string, id: string | number): Promise<boolean> {
+  const r = await sbFetch(table + '?id=eq.' + id, {
+    method: 'DELETE',
+    headers: { Prefer: '' },
+  });
+  return r.ok;
 }
 
-export async function logAudit(action: string, details: string, user: string) {
+export async function logAudit(action: string, entity: string, entityId: string, detail: string, userEmail = 'system'): Promise<void> {
   try {
-    await supabase.from('audit_logs').insert([
-      { action, details, user_email: user, created_at: new Date().toISOString() }
-    ]);
-  } catch (err) {
-    console.error("Failed to log audit", err);
-  }
+    await sbFetch('audit_log', {
+      method: 'POST',
+      headers: { Prefer: '' },
+      body: JSON.stringify({ user_email: userEmail, action, entity, entity_id: String(entityId || ''), detail }),
+    });
+  } catch (e) { console.warn('logAudit failed', e); }
 }
