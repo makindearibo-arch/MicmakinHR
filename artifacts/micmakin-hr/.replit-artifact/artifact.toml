@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Micmakin HR"
+version = "1.0.0"
+id = "artifacts/micmakin-hr"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 24904
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/micmakin-hr run dev"
+
+[services.env]
+PORT = "24904"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/micmakin-hr", "run", "build"]
+publicDir = "artifacts/micmakin-hr/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
